@@ -52,12 +52,12 @@ const CrisisReportModal: React.FC<CrisisReportModalProps> = ({
       
       navigator.geolocation.getCurrentPosition(
         (position) => {
-          const { latitude, lng } = position.coords;
+          const { latitude, longitude } = position.coords;
           setFormData(prev => ({
             ...prev,
             location: {
               ...prev.location,
-              coordinates: { lat: latitude, lng: position.coords.longitude }
+              coordinates: { lat: latitude, lng: longitude }
             }
           }));
           toast.success("Location detected successfully!");
@@ -109,9 +109,31 @@ const CrisisReportModal: React.FC<CrisisReportModalProps> = ({
     setPreviewUrls(updatedPreviews);
   };
 
+  const validateCoordinates = () => {
+    const { lat, lng } = formData.location.coordinates;
+    
+    // Basic coordinate validation
+    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+      toast.error("Invalid coordinates. Latitude must be between -90 and 90, longitude between -180 and 180.");
+      return false;
+    }
+    
+    // Check if coordinates are default (0,0) which is in the ocean
+    if (lat === 0 && lng === 0 && !formData.location.name) {
+      toast.error("Please provide a location name or detect your location.");
+      return false;
+    }
+    
+    return true;
+  };
+
   const handleSubmit = async () => {
     if (!formData.title || !formData.description || !formData.location.name) {
       toast.error("Please fill all required fields");
+      return;
+    }
+    
+    if (!validateCoordinates()) {
       return;
     }
     
