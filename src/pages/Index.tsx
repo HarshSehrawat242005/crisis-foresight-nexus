@@ -7,15 +7,19 @@ import EventsPanel from '@/components/EventsPanel';
 import OverviewPanel from '@/components/OverviewPanel';
 import ResourcesNeededPanel from '@/components/ResourcesNeededPanel';
 import PredictivePanel from '@/components/PredictivePanel';
+import CrisisReportModal from '@/components/CrisisReportModal';
 import { getCrisisEvents, CrisisEvent } from '@/services/crisisData';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 
 const Index = () => {
   const [activeNavItem, setActiveNavItem] = useState('dashboard');
   const [events, setEvents] = useState<CrisisEvent[]>([]);
   const [selectedEvent, setSelectedEvent] = useState<CrisisEvent | undefined>(undefined);
   const [loading, setLoading] = useState(true);
+  const [reportModalOpen, setReportModalOpen] = useState(false);
+  const [userLocation, setUserLocation] = useState<{lat: number, lng: number} | undefined>(undefined);
 
   // Fetch crisis events on component mount
   useEffect(() => {
@@ -27,15 +31,56 @@ const Index = () => {
       } catch (error) {
         console.error('Error fetching crisis events:', error);
         setLoading(false);
+        toast.error('Failed to load crisis data. Please refresh the page.');
       }
     };
 
     fetchEvents();
+    
+    // Try to get user's location in the background
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          setUserLocation({
+            lat: position.coords.latitude,
+            lng: position.coords.longitude
+          });
+        },
+        (error) => {
+          console.warn('Error getting user location:', error);
+        }
+      );
+    }
   }, []);
 
   // Handle event selection from map or event list
   const handleEventSelect = (event: CrisisEvent) => {
     setSelectedEvent(event);
+    toast.info(`Selected: ${event.title}`);
+  };
+  
+  // Handle submitting a new crisis report
+  const handleReportSubmit = (reportData: any) => {
+    console.log('Submitted report:', reportData);
+    
+    // In a real app, this would be sent to an API
+    // For demo purposes, we'll create a mock event and add it to our list
+    const newEvent: CrisisEvent = {
+      id: `temp-${Date.now()}`, // In a real app, the server would generate an ID
+      title: reportData.title,
+      description: reportData.description,
+      type: reportData.type,
+      severity: reportData.severity,
+      location: reportData.location,
+      timestamp: new Date(),
+      source: 'User Report',
+      verified: false,
+      affectedPopulation: undefined,
+      resourceNeeds: undefined
+    };
+    
+    setEvents(prev => [newEvent, ...prev]);
+    setSelectedEvent(newEvent);
   };
 
   if (loading) {
@@ -71,6 +116,7 @@ const Index = () => {
               events={events} 
               selectedEvent={selectedEvent} 
               onEventSelect={handleEventSelect} 
+              onReportIncident={() => setReportModalOpen(true)}
             />
           </div>
           
@@ -161,16 +207,34 @@ const Index = () => {
                 <div className="mt-4">
                   <h3 className="text-sm font-medium text-muted-foreground mb-1">Actions</h3>
                   <div className="grid grid-cols-2 gap-2">
-                    <button className="p-2 text-sm rounded bg-crisis-blue hover:bg-crisis-blue/80 text-white transition-colors">
+                    <button 
+                      className="p-2 text-sm rounded bg-crisis-blue hover:bg-crisis-blue/80 text-white transition-colors"
+                      onClick={() => toast.info("Resource allocation interface not yet implemented")}
+                    >
                       Resource Allocation
                     </button>
-                    <button className="p-2 text-sm rounded bg-crisis-red hover:bg-crisis-red/80 text-white transition-colors">
+                    <button 
+                      className="p-2 text-sm rounded bg-crisis-red hover:bg-crisis-red/80 text-white transition-colors"
+                      onClick={() => toast.info("Alert sent to response teams")}
+                    >
                       Alert Teams
                     </button>
-                    <button className="p-2 text-sm rounded border border-border hover:bg-muted/50 transition-colors">
+                    <button 
+                      className="p-2 text-sm rounded border border-border hover:bg-muted/50 transition-colors"
+                      onClick={() => toast.info("Note feature not yet implemented")}
+                    >
                       Add Note
                     </button>
-                    <button className="p-2 text-sm rounded border border-border hover:bg-muted/50 transition-colors">
+                    <button 
+                      className="p-2 text-sm rounded border border-border hover:bg-muted/50 transition-colors"
+                      onClick={() => {
+                        // Simulate sharing data with a toast
+                        navigator.clipboard.writeText(
+                          `Crisis Alert: ${selectedEvent.title} - ${selectedEvent.severity} ${selectedEvent.type} at ${selectedEvent.location.name}`
+                        );
+                        toast.success("Event details copied to clipboard");
+                      }}
+                    >
                       Share Data
                     </button>
                   </div>
@@ -186,6 +250,14 @@ const Index = () => {
           )}
         </div>
       </main>
+      
+      {/* Crisis Report Modal */}
+      <CrisisReportModal 
+        open={reportModalOpen} 
+        onOpenChange={setReportModalOpen}
+        onSubmit={handleReportSubmit}
+        currentLocation={userLocation}
+      />
     </div>
   );
 };

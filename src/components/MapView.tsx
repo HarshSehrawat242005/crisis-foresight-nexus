@@ -3,6 +3,8 @@ import React, { useRef, useEffect, useState } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { CrisisEvent, getCrisisTypeColor } from '@/services/crisisData';
+import MapControls from '@/components/MapControls';
+import { toast } from 'sonner';
 
 // Mapbox token (for demo purposes only - use environment variables in production)
 mapboxgl.accessToken = 'pk.eyJ1IjoibG92YWJsZSIsImEiOiJjbHI2OHZyeDEwMjF4MnNwYzM2OW1rdndyIn0.Mjn2LpEeDGUZcT1FOD_wEw';
@@ -11,12 +13,23 @@ interface MapViewProps {
   events: CrisisEvent[];
   selectedEvent?: CrisisEvent;
   onEventSelect: (event: CrisisEvent) => void;
+  onReportIncident?: () => void;
 }
 
-const MapView: React.FC<MapViewProps> = ({ events, selectedEvent, onEventSelect }) => {
+const MapView: React.FC<MapViewProps> = ({ 
+  events, 
+  selectedEvent, 
+  onEventSelect,
+  onReportIncident 
+}) => {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
+  const userLocationMarker = useRef<mapboxgl.Marker | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
+  const [showPredictions, setShowPredictions] = useState(true);
+  const [showResolved, setShowResolved] = useState(false);
+  const [showUserLocation, setShowUserLocation] = useState(false);
+  const [userCoordinates, setUserCoordinates] = useState<{ lat: number, lng: number } | null>(null);
   
   // Initialize map
   useEffect(() => {
@@ -82,6 +95,26 @@ const MapView: React.FC<MapViewProps> = ({ events, selectedEvent, onEventSelect 
             'line-dasharray': [2, 1]
           }
         });
+        
+        // Add animated pulse effect for the wildfire centroid
+        map.current.addLayer({
+          id: 'wildfire-centroid',
+          type: 'circle',
+          source: 'wildfire-prediction',
+          paint: {
+            'circle-radius': [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
+              8, 15,
+              12, 30
+            ],
+            'circle-color': '#ff7000',
+            'circle-opacity': 0.3,
+            'circle-stroke-width': 2,
+            'circle-stroke-color': '#ff7000'
+          }
+        });
       }
     });
     
@@ -89,6 +122,114 @@ const MapView: React.FC<MapViewProps> = ({ events, selectedEvent, onEventSelect 
       map.current?.remove();
     };
   }, []);
+  
+  // Toggle prediction layers visibility
+  useEffect(() => {
+    if (!mapLoaded || !map.current) return;
+    
+    const layers = [
+      'wildfire-prediction-area',
+      'wildfire-prediction-outline',
+      'wildfire-centroid'
+    ];
+    
+    layers.forEach(layer => {
+      if (map.current) {
+        map.current.setLayoutProperty(
+          layer, 
+          'visibility', 
+          showPredictions ? 'visible' : 'none'
+        );
+      }
+    });
+  }, [showPredictions, mapLoaded]);
+  
+  // Handle user location
+  useEffect(() => {
+    if (!mapLoaded || !map.current) return;
+    
+    if (showUserLocation) {
+      if (userCoordinates) {
+        // If we already have user coordinates, use them
+        addUserLocationMarker(userCoordinates.lat, userCoordinates.lng);
+      } else {
+        // Request user location
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            const { latitude, longitude } = position.coords;
+            setUserCoordinates({ lat: latitude, lng: longitude });
+            addUserLocationMarker(latitude, longitude);
+          },
+          (error) => {
+            console.error('Error getting user location:', error);
+            toast.error('Could not get your location. Please enable location services.');
+            setShowUserLocation(false);
+          },
+          { enableHighAccuracy: true }
+        );
+      }
+    } else if (userLocationMarker.current) {
+      // Remove user marker if toggle is off
+      userLocationMarker.current.remove();
+      userLocationMarker.current = null;
+    }
+  }, [showUserLocation, mapLoaded, userCoordinates]);
+  
+  // Add user location marker
+  const addUserLocationMarker = (lat: number, lng: number) => {
+    if (!map.current) return;
+    
+    // Create a DOM element for the custom marker
+    const el = document.createElement('div');
+    el.className = 'user-location-marker';
+    el.style.width = '24px';
+    el.style.height = '24px';
+    el.style.borderRadius = '50%';
+    el.style.backgroundColor = '#4299e1';
+    el.style.border = '3px solid white';
+    el.style.boxShadow = '0 0 0 2px rgba(0, 0, 0, 0.25)';
+    el.style.position = 'relative';
+    
+    // Add the pulsing effect
+    const pulse = document.createElement('div');
+    pulse.className = 'user-location-pulse';
+    pulse.style.position = 'absolute';
+    pulse.style.top = '-10px';
+    pulse.style.left = '-10px';
+    pulse.style.right = '-10px';
+    pulse.style.bottom = '-10px';
+    pulse.style.borderRadius = '50%';
+    pulse.style.border = '3px solid #4299e1';
+    pulse.style.animation = 'pulse 2s infinite';
+    el.appendChild(pulse);
+    
+    // Remove existing marker if there is one
+    if (userLocationMarker.current) {
+      userLocationMarker.current.remove();
+    }
+    
+    // Create and add new marker
+    userLocationMarker.current = new mapboxgl.Marker(el)
+      .setLngLat([lng, lat])
+      .addTo(map.current);
+    
+    // Add popup for the user location marker
+    const popup = new mapboxgl.Popup({
+      closeButton: false,
+      closeOnClick: false,
+      offset: 25,
+      className: 'crisis-popup'
+    }).setHTML('<div>Your Location</div>');
+    
+    // Add event listeners
+    el.addEventListener('mouseenter', () => {
+      popup.setLngLat([lng, lat]).addTo(map.current!);
+    });
+    
+    el.addEventListener('mouseleave', () => {
+      popup.remove();
+    });
+  };
   
   // Add/update event markers when events change
   useEffect(() => {
@@ -98,8 +239,14 @@ const MapView: React.FC<MapViewProps> = ({ events, selectedEvent, onEventSelect 
     const existingMarkers = document.querySelectorAll('.crisis-marker');
     existingMarkers.forEach(marker => marker.remove());
     
+    // Filter events based on settings
+    const filteredEvents = events.filter(event => {
+      // If showResolved is false, hide events that are marked as resolved
+      return showResolved || event.verified !== true;
+    });
+    
     // Add markers for each event
-    events.forEach(event => {
+    filteredEvents.forEach(event => {
       const { lat, lng } = event.location.coordinates;
       
       // Create marker element
@@ -136,6 +283,11 @@ const MapView: React.FC<MapViewProps> = ({ events, selectedEvent, onEventSelect 
       }).setHTML(`
         <div style="font-weight: 600; margin-bottom: 4px;">${event.title}</div>
         <div style="font-size: 12px; color: #ccc;">${event.type} • ${event.severity}</div>
+        <div style="font-size: 12px; margin-top: 4px; color: #eee;">
+          ${event.affectedPopulation 
+            ? `<strong>${event.affectedPopulation.toLocaleString()}</strong> people affected` 
+            : ''}
+        </div>
       `);
       
       // Create and add marker
@@ -167,10 +319,32 @@ const MapView: React.FC<MapViewProps> = ({ events, selectedEvent, onEventSelect 
         duration: 1500
       });
     }
-  }, [events, selectedEvent, mapLoaded, onEventSelect]);
+  }, [events, selectedEvent, mapLoaded, onEventSelect, showResolved]);
+  
+  // Center map handler
+  const handleCenterMap = () => {
+    if (!map.current) return;
+    
+    map.current.flyTo({
+      center: [-121.6219, 39.7596],
+      zoom: 8,
+      pitch: 30,
+      duration: 2000
+    });
+  };
   
   return (
     <div className="relative w-full h-full rounded-lg overflow-hidden">
+      <MapControls 
+        showPredictions={showPredictions}
+        onTogglePredictions={() => setShowPredictions(!showPredictions)}
+        onCenterMap={handleCenterMap}
+        showResolved={showResolved}
+        onToggleResolved={() => setShowResolved(!showResolved)}
+        showUserLocation={showUserLocation}
+        onToggleUserLocation={() => setShowUserLocation(!showUserLocation)}
+        onReportIncident={onReportIncident || (() => {})}
+      />
       <div ref={mapContainer} className="absolute inset-0" />
       <style dangerouslySetInnerHTML={{ __html: `
         .crisis-popup .mapboxgl-popup-content {
@@ -194,6 +368,25 @@ const MapView: React.FC<MapViewProps> = ({ events, selectedEvent, onEventSelect 
           }
           100% {
             box-shadow: 0 0 0 0 rgba(217, 37, 37, 0);
+          }
+        }
+        
+        .user-location-pulse {
+          animation: user-pulse 2s infinite;
+        }
+        
+        @keyframes user-pulse {
+          0% {
+            transform: scale(0.7);
+            opacity: 1;
+          }
+          70% {
+            transform: scale(1.5);
+            opacity: 0;
+          }
+          100% {
+            transform: scale(0.7);
+            opacity: 0;
           }
         }
       `}} />
