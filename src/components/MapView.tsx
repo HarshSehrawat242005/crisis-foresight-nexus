@@ -57,8 +57,9 @@ const MapView: React.FC<MapViewProps> = ({ events, selectedEvent, onEventSelect 
                 [-121.6319, 39.7396],
                 [-121.6319, 39.7696]
               ]]
-            }
-          }
+            },
+            properties: {} // Add properties to satisfy GeoJSON.Feature type
+          } as GeoJSON.Feature<GeoJSON.Geometry, { [key: string]: any }>
         });
         
         map.current.addLayer({
@@ -171,7 +172,7 @@ const MapView: React.FC<MapViewProps> = ({ events, selectedEvent, onEventSelect 
   return (
     <div className="relative w-full h-full rounded-lg overflow-hidden">
       <div ref={mapContainer} className="absolute inset-0" />
-      <style jsx global>{`
+      <style dangerouslySetInnerHTML={{ __html: `
         .crisis-popup .mapboxgl-popup-content {
           background-color: #123E59;
           color: white;
@@ -195,7 +196,7 @@ const MapView: React.FC<MapViewProps> = ({ events, selectedEvent, onEventSelect 
             box-shadow: 0 0 0 0 rgba(217, 37, 37, 0);
           }
         }
-      `}</style>
+      `}} />
     </div>
   );
 };
